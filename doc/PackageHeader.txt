@@ -1,0 +1,8 @@
+Version             2 Bytes
+MagicNumber         2 Bytes
+MessageID           4 Bytes
+MessageHashCode     4 Bytes
+OperationType       2 Bytes         # Pipeline, Broadcast, Recv
+MachineIP[]         16 Bytes        # 4 * 4 Bytes
+BodyChecksum        4 Bytes
+BodyLength          4 Bytes
