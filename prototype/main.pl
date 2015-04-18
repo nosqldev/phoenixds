@@ -73,8 +73,18 @@ sub recv_msg
 #}}}
 
 # }}} Basic Functions
-# {{{ Setup env
+# {{{ Setup Env
 
+# {{{ sub launch_all_machines
+sub launch_all_machines
+{
+    my $cnt = shift;
+
+    die "number should larger than 2" if $cnt < 3;
+
+    &launch_machine for (1...$cnt);
+}
+#}}}
 # {{{ sub launch_machine
 sub launch_machine
 {
@@ -107,8 +117,14 @@ sub wait_all_machine
     map { waitpid($_, 0) } keys %pid_machine_name;
 }
 #}}}
+# {{{ sub sync_machine_info
+sub sync_machine_info
+{
+    # map { &send_msg($_, "SYNC_MACHINES", $buf) } keys %machine_list;
+}
+#}}}
 
-# }}} Setup env
+# }}} Setup Env
 # {{{ Cluster Instance Functions
 
 # {{{ sub worker
@@ -119,6 +135,8 @@ sub worker
     my $local_rfd = shift;
 
     my %kv = (); # simulate local data store on one machine
+    my %machine_list = (); # local hash to store all machines list
+    my %pid_machine_name = ();
 
     while (1)
     {
@@ -140,6 +158,10 @@ sub worker
         {
             print Dumper \%kv;
         }
+        elsif ($cmd eq 'SYNC_MACHINES')
+        {
+            print Dumper($arg_ref);
+        }
     }
 }
 
@@ -151,28 +173,8 @@ sub worker
 
 sub main
 {
-#    my ($rfd, $wfd);
-#    pipe($rfd, $wfd);
-#
-#    $machine_list{"m00"}{"read_fd"} = $rfd;
-#    $machine_list{"m00"}{"write_fd"} = $wfd;
-#
-#    print Dumper(\%machine_list);
-#
-#    my %hash = ("1"=>2);
-#    my $msg = freeze \%hash;
-#    &send_msg("m00", "OK", $msg);
-#    my ($cmd, $hash_ref) = &recv_msg($rfd);
-#
-#    print $cmd, "\n";
-#    print Dumper($hash_ref);
-
-    &launch_machine;
-    &launch_machine;
-    &launch_machine;
-
-    #print Dumper(\%machine_list);
-    #print Dumper(\%pid_machine_name);
+    &launch_all_machines(3);
+    #&sync_machine_info;
 
     my $arg = freeze {'key'=>'city', 'value'=>'beijing'};
 
