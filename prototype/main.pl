@@ -18,36 +18,59 @@ use POSIX ":sys_wait_h";
 
 # {{{ global var
 
+our @g_pipes = ();
+
 our $machine_cnt = 0;
 
-our %machine_list = (
+our %g_machine_list = (
     "m00" => {
-        "read_fd"  => undef,
-        "write_fd" => undef,
-        "pid"      => undef,
+        "id"  => undef,
+        "pid" => undef,
     },
 );
 
-our %pid_machine_name = ();
+our %g_pid_machine_name = ();
 
 # }}}
+
 # {{{ Basci Functions
 
+# {{{ sub get_read_fd
+
+sub get_read_fd
+{
+    my $machine_id = shift;
+
+    return @g_pipes[$machine_id * 2];
+}
+
+# }}}
+# {{{ sub get_write_fd
+# Description: get write fd by machine_id
+
+sub get_write_fd
+{
+    my $machine_id = shift;
+
+    return @g_pipes[$machine_id * 2 + 1];
+}
+
+#}}}
 # {{{ sub send_msg
 sub send_msg
 {
-    my $machine_id = shift;
+    my $machine_name = shift;
     my $cmd = shift; # string, length must be less than 16
     my $msg = shift; # serialized by Storable
 
     if (defined($msg))
     {
-        syswrite($machine_list{$machine_id}{"write_fd"}, pack("A16N", $cmd, length($msg)));
-        syswrite($machine_list{$machine_id}{"write_fd"}, $msg);
+        syswrite(&get_write_fd($g_machine_list{$machine_name}{"id"}), pack("A16N", $cmd, length($msg)));
+        syswrite(&get_write_fd($g_machine_list{$machine_name}{"id"}), $msg);
     }
     else
     {
-        syswrite($machine_list{$machine_id}{"write_fd"}, pack("A16N", $cmd, 0));
+        syswrite(&get_write_fd($g_machine_list{$machine_name}{"id"}), pack("A16N", $cmd, 0));
     }
 }
 #}}}
@@ -73,6 +96,7 @@ sub recv_msg
 #}}}
 
 # }}} Basic Functions
+
 # {{{ Setup Env
 
 # {{{ sub launch_all_machines
@@ -82,49 +106,55 @@ sub launch_all_machines
 
     die "number should larger than 2" if $cnt < 3;
 
+    for (1...$cnt)
+    {
+        my ($r, $w);
+        pipe($r, $w);
+        push(@g_pipes, $r, $w);
+    }
+
     &launch_machine for (1...$cnt);
 }
 #}}}
 # {{{ sub launch_machine
+
 sub launch_machine
 {
     my $machine_name = sprintf "m%02d", $machine_cnt;
-    my ($rfd, $wfd);
-
-    pipe($rfd, $wfd);
 
     my $pid = fork;
     if ($pid == 0)
     {
         print color("green") . "[$$] ". $machine_name . " launched" . color("clear"), "\n";
-        &worker($rfd);
+        &worker($machine_cnt);
         exit;
     }
     else
     {
         select undef, undef, undef, 0.1;
-        $machine_list{$machine_name}{"read_fd"} = $rfd;
-        $machine_list{$machine_name}{"write_fd"} = $wfd;
-        $machine_list{$machine_name}{"pid"} = $pid;
-        $pid_machine_name{$pid} = $machine_name;
+        $g_machine_list{$machine_name}{"pid"} = $pid;
+        $g_machine_list{$machine_name}{"id"} = $machine_cnt;
+        $g_pid_machine_name{$pid} = $machine_name;
         $machine_cnt ++;
     }
 }
+
 #}}}
 # {{{ sub wait_all_machine
 sub wait_all_machine
 {
-    map { waitpid($_, 0) } keys %pid_machine_name;
+    map { waitpid($_, 0) } keys %g_pid_machine_name;
 }
 #}}}
 # {{{ sub sync_machine_info
 sub sync_machine_info
 {
-    # map { &send_msg($_, "SYNC_MACHINES", $buf) } keys %machine_list;
+    #map { &send_msg($_, "SYNC_MACHINES", $buf) } keys %g_machine_list;
 }
 #}}}
 
 # }}} Setup Env
+
 # {{{ Cluster Instance Functions
 
 # {{{ sub worker
@@ -132,7 +162,7 @@ sub sync_machine_info
 
 sub worker
 {
-    my $local_rfd = shift;
+    my $machine_id = shift;
 
     my %kv = (); # simulate local data store on one machine
     my %machine_list = (); # local hash to store all machines list
@@ -140,7 +170,7 @@ sub worker
 
     while (1)
     {
-        my ($cmd, $arg_ref) = &recv_msg($local_rfd);
+        my ($cmd, $arg_ref) = &recv_msg( &get_read_fd($machine_id) );
 
         print color("blue") . "[$$] $cmd" . color("clear") . "\n";
 
