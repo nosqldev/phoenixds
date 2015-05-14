@@ -98,6 +98,7 @@ sub recv_msg
 # }}} Basic Functions
 
 # {{{ Setup Env
+# In this section, all functions are called by operator / client
 
 # {{{ sub launch_all_machines
 sub launch_all_machines
@@ -114,6 +115,7 @@ sub launch_all_machines
     }
 
     &launch_machine for (1...$cnt);
+    select undef, undef, undef, 0.2;
 }
 #}}}
 # {{{ sub launch_machine
@@ -146,11 +148,14 @@ sub wait_all_machine
     map { waitpid($_, 0) } keys %g_pid_machine_name;
 }
 #}}}
-# {{{ sub sync_machine_info
-sub sync_machine_info
+# {{{ sub load_machine_info
+
+sub load_machine_info
 {
-    #map { &send_msg($_, "SYNC_MACHINES", $buf) } keys %g_machine_list;
+    my $buf = freeze \%g_machine_list;
+    map { &send_msg($_, "LOAD_MACHINE_INFO", $buf) } keys %g_machine_list;
 }
+
 #}}}
 
 # }}} Setup Env
@@ -166,31 +171,35 @@ sub worker
 
     my %kv = (); # simulate local data store on one machine
     my %machine_list = (); # local hash to store all machines list
-    my %pid_machine_name = ();
+    my %other_machine_list = (); # local machines list except self
+
+    my @add_events = ();
 
     while (1)
     {
         my ($cmd, $arg_ref) = &recv_msg( &get_read_fd($machine_id) );
 
-        print color("blue") . "[$$] $cmd" . color("clear") . "\n";
+        print color("blue") . "[$$ : $machine_id] $cmd" . color("clear") . "\n";
 
         if ($cmd eq 'EXIT')
         {
-            #print color("red") . "$$ exit" . color("clear") . "\n";
+            print color("red") . "[$$ : $machine_id] exit" . color("clear") . "\n";
             return;
         }
         elsif ($cmd eq 'ADD')
         {
-            #print color("red") . "$$ add keys: $arg_ref->{'key'}" . color("clear") . "\n";
+            print color("cyan") . "[$$ : $machine_id] ADD ITEM" . color("clear") . "\n";
             $kv{ $arg_ref->{'key'} } = $arg_ref->{'value'};
         }
         elsif ($cmd eq 'ALLKEYS')
         {
+            print color("green") . "[$$ : $machine_id] SHOW ALL KEYS" . color("clear") . "\n";
             print Dumper \%kv;
         }
-        elsif ($cmd eq 'SYNC_MACHINES')
+        elsif ($cmd eq 'LOAD_MACHINE_INFO')
         {
-            print Dumper($arg_ref);
+            %machine_list = %{$arg_ref};
+            %other_machine_list = map { $_ => $machine_list{$_} } grep { $machine_list{$_}{'id'} != $machine_id } keys %machine_list;
         }
     }
 }
@@ -204,7 +213,7 @@ sub worker
 sub main
 {
     &launch_all_machines(3);
-    #&sync_machine_info;
+    &load_machine_info;
 
     my $arg = freeze {'key'=>'city', 'value'=>'beijing'};
 
